@@ -41,15 +41,29 @@ function logfile2db($filename) {
 
             if ($doc_one = log2doc($buffer)) {
 
-                $doc_one['server'] = $server_flag;
-
-                $collection->insert($doc_one);
+				$doc_one['server'] = $server_flag;
+				$doc_one['transaction'] = true;
+				try {
+                	$collection->insert($doc_one);
+				} catch (MongoException $e) {
+					echo $e . "\n";
+					echo "Current File: {$filename}\n";
+					echo "Current Line: {$buffer}\n";
+					echo 'You can manually rollback using db.log.remove({"transaction" : true})' . "\n";
+					exit;
+				}
             }
 
             $line_count++;
-            if ($line_count % 50000 == 0) trigger_error("Processed lines: {$line_count}");
+            if ($line_count % 100000 == 0) trigger_error("Processed lines: {$line_count}");
             //break; //for debug
 		}
+		$collection->update(
+			array("transaction" => true), 
+			array('$unset' => array("transaction" => 1)),
+			array("multiple" => true)
+		); //remove transaction flag
+
 		$time_spent = time() - $time_spent;
 		trigger_error("Finish! Load {$line_count} lines in {$time_spent} seconds.");
         fclose($handle);
@@ -64,6 +78,7 @@ function logfile2db($filename) {
  */
 function log2doc($log_line) {
     if ($log_line == '') return false;
+	$log_line =	iconv("utf-8", "utf-8//ignore", $log_line); //to strip invalid characters
 
     $orig_arr   = array_values(array_filter(explode(' ', rtrim($log_line)), 'empty_str_filter'));
 
